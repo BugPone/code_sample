@@ -78,7 +78,7 @@ function moveMode.new(Name, MoveValues, KeysDown, sharedInstancesTable)
 		
 	}
 
-	self.cameraPart.Transparency = 0.95 -- sfor debugging - so we see the camera part (temp)
+	self.cameraPart.Transparency = 0.95 -- for debugging - so we see the camera part (temp)
 	self.rootToFootDistance = (self.character.HumanoidRootPart.Size.Y / 2) + self.character.LowerTorso.Size.Y + self.character.LeftUpperLeg.Size.Y + self.character.LeftLowerLeg.Size.Y + self.character.LeftFoot.Size.Y
 	for _, desc in pairs(MoveValues:GetDescendants())do
 		moveMode[desc.Name] = desc
