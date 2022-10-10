@@ -30,17 +30,17 @@ function moveMode.new(Name, MoveValues, KeysDown, sharedInstancesTable)
 		
 		--basics
 		speed = 75,
-		dampXZ = 0.96,		
+		dampXZ = 0.96, --in physics, this is how fast you go to your max speed and how fast you restore to 0 speed. Reasonable values are between 0.9 and 0.99
 		name = Name,
-		stopSpeed = 4.99,
-		MIN_SPEED = 5,
+		stopSpeed = 4.99, --just used to prevent extreme slipperyness, as you start off at a minimum speed
+		MIN_SPEED = 5, --just used to prevent extreme slipperyness, as you start off at a minimum speed
 
 		--jump values
 		minJumpCooldown = 0.2,
 		DEFAULT_NUMBER_OF_JUMP_FRAMES = 15,
 		collisionStrength = 1, -- a value between 1 and 2. 1 for no bounce. 2 for full reflection
-		minCollisionDistance = 6,
-		minDistanceFromFloorToStartWallrun = 5,
+		minCollisionDistance = 6, -- for collision detection
+		minDistanceFromFloorToStartWallrun = 5,  -- for collision detection, should probably be less than minCollisionDistance
 		defaultDoubleJumps = 1,
 		
 		frameGoal = CFrame.new(0,0,0),
@@ -62,7 +62,13 @@ function moveMode.new(Name, MoveValues, KeysDown, sharedInstancesTable)
 		
 	}
 
-	self.cameraPart.Transparency = 0.95 -- set that yellow camera part temp
+	--[[
+	The movement code also has a camera system for the movement system.
+	We have a "fake part" called cameraPart that we tween to where the camera should be.
+	Then we set the player's view camera (workspace.camera) to the tweened camera's position every frame.
+	This leads to a smoother camera, good for the wallrunning tilt effect.
+	]]
+	self.cameraPart.Transparency = 0.95 -- sfor debugging - so we see the camera part (temp)
 	self.rootToFootDistance = (self.character.HumanoidRootPart.Size.Y / 2) + self.character.LowerTorso.Size.Y + self.character.LeftUpperLeg.Size.Y + self.character.LeftLowerLeg.Size.Y + self.character.LeftFoot.Size.Y
 	for _, desc in pairs(MoveValues:GetDescendants())do
 		moveMode[desc.Name] = desc
@@ -74,6 +80,8 @@ function moveMode.new(Name, MoveValues, KeysDown, sharedInstancesTable)
 	
 	self.currentAnchor = game.ReplicatedStorage.clientPrivateStorage.values.currentAnchor
 	
+	--Rotates the camera left and right when you hit the wall
+	--built off of the Spring module from the Nevermore Engine, implementing Hooke's Law.
 	local RollSpring = SpringModule.new(0)
 	RollSpring.Speed = 15
 	RollSpring.Damper = 0.9
@@ -94,18 +102,20 @@ function moveMode.new(Name, MoveValues, KeysDown, sharedInstancesTable)
 	return self
 end
 
+--update what we want the camera's position and rotation to be
+--this is called the "goal".
 function moveMode:updateCameraTweenGoal()
 	--print("update cam regular movemode")
 	--
 	
-	
+	--if player moves mouse, rotate the camera
 	local delta = UserInputService:GetMouseDelta() * UserInputService.MouseDeltaSensitivity * self.cameraSensitivityMultiplier
 	
 	self.yaw.Value = self.yaw.Value + delta.X 
 	self.pitch.Value = math.clamp((self.pitch.Value + delta.Y),-89,89 + self.extraCameraRecoilPitch.Value)
-	--add mouse delta to rotation 
 	--print(tostring(self.camRotThisFrame.Value + Vector3.new(-self.pitch.Value, -self.yaw.Value, 0)))
 
+	--if they're not wallrunning, don't add the wallrunning camera effect.
 	if self.movementMode.Value ~= "wallrun" then
 		self.sharedInstances.rollSpring.Target = 0
 	end
@@ -124,6 +134,9 @@ function moveMode:updateCameraTweenGoal()
 	
 end
 
+--step 1: play a tween on a part that constantly goes to where the camera should be (every frame).
+--step 2: set the player's camera position to the tween part (every frame).
+--this makes a smooth, tweened camera.
 function moveMode:applyCameraTweenGoal()
 	--import gun's recoil from gun
 	
@@ -143,7 +156,7 @@ function moveMode:applyCameraTweenGoal()
 	self.tweenPart.Position = posGoal
 	workspace.CurrentCamera.CFrame = self.tweenPart.CFrame
 	
-	--reset
+	--reset, we re will calculate the goal rotation every frame. 
 	self.camRotThisFrame.Value = Vector3.new(0,0,0)
 end
 
@@ -177,6 +190,7 @@ function moveMode:updateLast()
 	self.frameCounter.Value = self.frameCounter.Value + 1
 end
 
+--if a player hits the floor, give them their double jumps back!
 function moveMode:updateDoubleJumps()
 	if self.humanoid.FloorMaterial ~= nil and self.humanoid.FloorMaterial ~= Enum.Material.Air then
 		--refresh jumps
@@ -204,11 +218,8 @@ function moveMode:updateFirst()
 	]]
 end
 
-function moveMode:getFullCameraDirVector()
-	local camera = workspace.CurrentCamera
-	local dirVector = Vector3.new(0,0,0)
-end
-
+-- Gets the left/right direction vector of the player.
+--IIRC, this is so when we are wallrunning, we only move the player in the X and Z direction of the wall, not the Y (not up and down the wall)
 function moveMode:getCameraDirVectorXZ()
 	local camera = workspace.CurrentCamera
 	local dirVector = Vector3.new(0,0,0) -- X and Z, not X and Y. See code below.
@@ -236,6 +247,9 @@ function moveMode:getCameraDirVectorXZ()
 	return dirVector
 end
 
+-- dirVector is a vector representing the direction the player wants to move.
+-- we grab that diretion and move the player by their current SPEED amount.
+-- (it's more complicated than just SPEED, but yeah)
 function moveMode:updateDirVector()
 
 	local fullDir = self:getCameraDirVectorXZ()
@@ -247,6 +261,7 @@ function moveMode:updateDirVector()
 	
 end
 
+--overrided by subclasses to do stuff when we enter or exit a method of moving
 function moveMode:onStart()
 	
 end
@@ -254,6 +269,7 @@ function moveMode:onEnd()
 
 end
 
+--swaps between movement modes like walking / wallrunning
 function moveMode:setMode(newModeName)
 	--print("old mode: " .. self.name .. " new mode: " .. newModeName)
 	self.sharedInstances[self.name]:onEnd()
@@ -321,6 +337,7 @@ function moveMode:groundTotalVelocity()
 	
 end
 
+--if you don't know how damping based acceleration / velocity movement works, don't read this.
 function moveMode:updateVelocity()
 	
 	--print("CALLING DEFAULT UPDATE VLEOCITY")
@@ -330,6 +347,8 @@ function moveMode:updateVelocity()
 	local currentXZSpeed = self.totalVelocity.Value --* Vector3.new(1,0,1)
 	
 	local XZMagnitude = currentXZSpeed.Magnitude
+	-- if we are under the minimum speed, but the player wants to move...
+	-- then let them start moving at the minimum speed.
 	if XZMagnitude < self.MIN_SPEED and (self.dirVector.Value.Magnitude > 0) then
 		incrementAmount = self.dirVector.Value.Unit * self.MIN_SPEED -- * 1.05
 		self.totalVelocity.Value = Vector3.new(0,0,0)
@@ -338,13 +357,13 @@ function moveMode:updateVelocity()
 	
 	local dot = self.dirVector.Value:Dot(currentXZSpeed)
 
-	--add incremented speed
+	--add incremented speed. We add speed to the player's total speed 60~ times per second. This is how cars (in this case, players), accelerate and deccelerate smoothly
 	local dirWithSpeed = Vector3.new(self.dirVector.Value.X * self.speed, 0,self.dirVector.Value.Z * self.speed)
 	local fpsFraction = 1/workspace:GetRealPhysicsFPS()
 	incrementAmount =  Vector3.new(dirWithSpeed.X * fpsFraction, 0, dirWithSpeed.Z * fpsFraction) -- increment by fps and speed
 	self.totalVelocity.Value = self.totalVelocity.Value + incrementAmount
 	
-	--dont damp gravity. Damp XZ
+	--dont damp gravity. Damp XZ.
 	local dampAmount = Vector3.new(self.dampXZ, 1, self.dampXZ)
 	self.totalVelocity.Value = self.totalVelocity.Value * dampAmount
 	
@@ -355,10 +374,12 @@ function moveMode:updateVelocity()
 	--add root gravity
 end
 
+--applies the speed we should be at (the totalVelocity we calculated using physics + Roblox's gravity) to the player's actual character (root.AssemblyLinearVelocity)
 function moveMode:applyVelocityToRoot()
 	self.root.AssemblyLinearVelocity = self.totalVelocity.Value + Vector3.new(0,self.root.AssemblyLinearVelocity.Y,0) -- add 
 end
 
+--fires a ray in the direction we should be moving to detect if there is anything in the way.
 --@returns NIL (no collision) or RAYCAST RESULT on collision
 function moveMode:getCollisionResult()
 	
@@ -413,6 +434,7 @@ function moveMode:isHighEnoughForWallRun()
 	
 end
 
+--we only want to do a wallrun if we are higher up on the wall.
 function moveMode:isCollideTooHighForWallrun(hitPos)
 	local dist = (hitPos.Y - self.rootToFoot.Position.Y)
 	--print("dist is: " .. dist)
@@ -422,6 +444,7 @@ function moveMode:isCollideTooHighForWallrun(hitPos)
 	return false
 end
 
+-- (DISABLED) so our collision system bounce player off of objects.
 function moveMode:bounceCharacter(normal)
 	if false then
 		local reflection = (self.totalVelocity.Value - (self.collisionStrength * self.totalVelocity.Value:Dot(normal) * normal))
@@ -429,6 +452,8 @@ function moveMode:bounceCharacter(normal)
 	end
 end
 
+--returns true if we can reasonably start a wallrun
+--returns false otherwise
 function moveMode:shouldWallRun(collisionResult)
 	
 	if collisionResult.Instance:FindFirstChild("_notWallRunnable") then
@@ -461,6 +486,7 @@ function moveMode:removeGrappleIfExists()
 	end
 end
 
+--performs actions based off of collisions that we detect
 function moveMode:handleCollisions()
 	local collisionResult = self:getCollisionResult()
 	if collisionResult == nil then
@@ -472,6 +498,8 @@ function moveMode:handleCollisions()
 	self:bounceCharacter(normal)
 	--self:visualizeRay(self.root.Position, reflection + self.root.Position, Color3.new(1, 0.933333, 0.00392157),0.1)
 	--self:makeDebugPart(collisionResult.Position, Color3.new(1, 0, 0),Vector3.new(1,1,1),3)
+	
+	--wallruns if we performed that kind of collision to a wall.
 	if self:shouldWallRun(collisionResult) then
 		if self.movementMode.Value == "grapple" then
 			moveMode:removeGrappleIfExists()
@@ -581,13 +609,17 @@ function moveMode:handleJumpRequest()
 	]]
 end
 
+--just a raycasting wrapper I use
 function moveMode:fireRay(position, direction, distance)
 	return self.rayutils:fireRay(position, direction, distance, {self.character})
 end
 
+--just used to visualize rays by me, for debugging raycasts
 function moveMode:visualizeRay(originPos, targetPos, color, lineLife)
 	self.rayutils:visualizeRay(originPos, targetPos, color, lineLife)
 end
+
+--just makes a part, used for debugging
 function moveMode:makeDebugPart(position,life)
 	self.rayutils:makeDebugPart(position, life)
 end
